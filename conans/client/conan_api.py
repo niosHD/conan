@@ -693,7 +693,7 @@ class ConanAPIV1(object):
     @api_method
     def execute(self, command, references=None, profile_name=None,
                 initial_env=None, settings=None, options=None, remote=None,
-                build_modes=None, update=None, env=None, cwd=None):
+                build_modes=None, update=None, env=None, cwd=None, quiet=None):
         """ Executes a command in the environment defined by the profile, the
         specified references, settings, and options.
 
@@ -704,6 +704,10 @@ class ConanAPIV1(object):
         cwd = cwd if cwd is not None else os.getcwd()
         references = references if references is not None else []
         initial_env = initial_env if initial_env is not None else os.environ
+
+        # Disable all output from Conan
+        if quiet:
+            self._manager._user_io.out._stream = None
 
         # Load the profile given the specified settings, options, and env variables.
         profile = profile_from_args(profile_name, settings, options, env, cwd,
