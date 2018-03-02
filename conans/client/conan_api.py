@@ -1,5 +1,7 @@
 import os
+import platform
 import sys
+import tempfile
 
 import requests
 
@@ -27,7 +29,7 @@ from conans.model.version import Version
 from conans.paths import get_conan_user_home, CONANINFO, BUILD_INFO
 from conans.search.search import DiskSearchManager
 from conans.util.env_reader import get_env
-from conans.util.files import save_files, exception_message_safe, mkdir
+from conans.util.files import save_files, exception_message_safe, mkdir, to_file_bytes
 from conans.util.log import configure_logger
 from conans.util.tracer import log_command, log_exception
 from conans.client.loader_parse import load_conanfile_class
@@ -37,7 +39,7 @@ from conans.client.cmd.uploader import CmdUpload
 from conans.client.cmd.profile import cmd_profile_update, cmd_profile_get,\
     cmd_profile_delete_key, cmd_profile_create, cmd_profile_list
 from conans.client.cmd.search import Search
-
+from conans.client.generators import VirtualEnvGenerator
 
 default_manifest_folder = '.conan_manifests'
 
@@ -688,6 +690,71 @@ class ConanAPIV1(object):
         target_reference = ConanFileReference.loads(str(target_reference))
         return self._manager.export_alias(reference, target_reference)
 
+    @api_method
+    def execute(self, command, references=None, profile_name=None,
+                initial_env=None, settings=None, options=None, remote=None,
+                build_modes=None, update=None, env=None, cwd=None):
+        """ Executes a command in the environment defined by the profile, the
+        specified references, settings, and options.
+
+        If any of the required packages is missing they are automatically
+        installed.
+        """
+        # setup proper defaults
+        cwd = cwd if cwd is not None else os.getcwd()
+        references = references if references is not None else []
+        initial_env = initial_env if initial_env is not None else os.environ
+
+        # Load the profile given the specified settings, options, and env variables.
+        profile = profile_from_args(profile_name, settings, options, env, cwd,
+                                    self._client_cache)
+
+        # Build a temporary conanfile.txt, install it and determine the
+        # required environment variables. Note that, as long as extension
+        # is correct, the actual name does not matter.
+        try:
+            # Write all requested references to the file. Note that we have to
+            # close the file such that Windows can work with them.
+            # (see https://bugs.python.org/issue14243)
+            temp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+            temp.write(to_file_bytes('[requires]\n'))
+            for ref in references:
+                temp.write(to_file_bytes(ref + '\n'))
+            temp.close()
+
+            # Install the dependencies if needed and get an valid conanfile.
+            conanfile = self._manager.install(reference=temp.name,
+                                              install_folder=None,
+                                              profile=profile,
+                                              remote=remote,
+                                              build_modes=build_modes,
+                                              update=update)
+
+            # Determine the environment variables for the given conanfile.
+            env_vars = VirtualEnvGenerator(conanfile).format_values("exec", None, initial_env)
+        finally:
+            # Delete the temporary file after the processing.
+            if not temp.closed:
+                temp.close()
+            os.unlink(temp.name)
+
+        # Change to the correct directory which might has been changed during
+        # installation and launch the command in the new environment.
+        os.chdir(cwd)
+
+        # Unfortunately, os.execvpe does crash on some Windows python versions
+        # (see https://bugs.python.org/issue23462). Furthermore, using exec on
+        # Windows apparently does not yield the desired behavior anyway
+        # (see https://bugs.python.org/issue19124).
+        # Work around both problems by first updating the current environment
+        # directly and by using system on Windows.
+        os.environ.clear()
+        for key,value,_ in env_vars:
+            os.environ[key] = value
+        if platform.system() == "Windows":
+            os.system(" ".join(command))
+        else:
+            os.execvp(command[0], command)
 
 Conan = ConanAPIV1
 

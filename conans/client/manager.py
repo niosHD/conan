@@ -405,6 +405,7 @@ class ConanManager(object):
 
         if manifest_manager:
             manifest_manager.print_log()
+        return conanfile
 
     def source(self, conanfile_path, source_folder, info_folder):
         """

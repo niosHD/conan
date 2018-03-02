@@ -17,12 +17,14 @@ class VirtualEnvGenerator(Generator):
     def filename(self):
         return
 
-    def _variable_placeholder(self, flavor, name):
+    def _variable_placeholder(self, flavor, name, env):
         ''' Returns a placeholder for the variable name formatted for a certain
-        execution environment. (e.g., cmd, ps1, sh).
+        execution environment. (e.g., cmd, ps1, sh, exec).
         '''
         if flavor == "cmd":
             return "%%%s%%" % name
+        if flavor == "exec":
+            return env.get( name, None )
         if flavor == "ps1":
             return "$env:%s" % name
         # flavor == sh
@@ -38,21 +40,26 @@ class VirtualEnvGenerator(Generator):
             pathsep,quoteElements,enableSpacePathsep = ";",False,False
         if flavor in ["ps1"]:
             quoteFullValue = True
+        if flavor in ["exec"]:
+            pathsep = os.pathsep
+            quoteElements,quoteFullValue = False,False
+            enableSpacePathsep = os_info.is_posix
 
         ret = []
         for name, value in variables:
             # activate values
             if isinstance(value, list):
-                placeholder = self._variable_placeholder(flavor, name)
+                placeholder = self._variable_placeholder(flavor, name, env)
+                placeholder = [ placeholder ] if placeholder else []
                 if enableSpacePathsep and name in self.append_with_spaces:
                     # Variables joined with spaces look like: CPPFLAGS="one two three"
-                    value = " ".join(value+[placeholder])
+                    value = " ".join(value+placeholder)
                     value = "\"%s\"" % value if value else ""
                 else:
                     # Quoted variables joined with pathset may look like: PATH="one path":"two paths"
                     # Unquoted variables joined with pathset may look like: PATH=one path;two paths
                     value = ["\"%s\"" % v for v in value] if quoteElements else value
-                    value = pathsep.join(value+[placeholder])
+                    value = pathsep.join(value+placeholder)
             else:
                 # single value
                 value = "\"%s\"" % value if quoteElements else value
