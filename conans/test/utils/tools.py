@@ -409,7 +409,7 @@ class TestClient(object):
         # Maybe something have changed with migrations
         self._init_collaborators(user_io)
 
-    def run(self, command_line, user_io=None, ignore_error=False):
+    def run(self, command_line, user_io=None, ignore_error=False, use_forked_process=False):
         """ run a single command as in the command line.
             If user or password is filled, user_io will be mocked to return this
             tuple if required
@@ -426,7 +426,15 @@ class TestClient(object):
         sys.path.append(os.path.join(self.client_cache.conan_folder, "python"))
         old_modules = list(sys.modules.keys())
         try:
-            error = command.run(args)
+            if use_forked_process:
+                pid = os.fork()
+                if pid == 0:
+                    error = command.run(args)
+                    sys.exit(error)
+                (_, retcode) = os.waitpid(pid,0)
+                error = retcode != 0
+            else:
+                error = command.run(args)
         finally:
             sys.path = old_path
             os.chdir(current_dir)
