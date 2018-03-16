@@ -1,8 +1,8 @@
 import copy
 import os
-import platform
 import unittest
 from conans.test.utils.tools import TestClient
+from conans.tools import os_info
 from conans.util.files import load
 
 class VirtualEnvGeneratorTest(unittest.TestCase):
@@ -56,7 +56,7 @@ virtualenv
         client.save({"conanfile.txt": base}, clean_first=True)
         client.run("install . --build")
 
-        if platform.system() == "Windows":
+        if os_info.is_windows:
             activate = load(os.path.join(client.current_folder, "activate.bat"))
             self.assertIn('SET PROMPT=(conanenv) %PROMPT%', activate)
             self.assertIn('SET BASE_LIST=dummyValue1;dummyValue2;baseValue1;baseValue2;%BASE_LIST%', activate)
@@ -67,46 +67,59 @@ virtualenv
             self.assertIn('SET SPECIAL_VAR=dummyValue', activate)
 
             activate = load(os.path.join(client.current_folder, "activate.ps1"))
-            self.assertIn('$env:BASE_LIST = "dummyValue1;dummyValue2;baseValue1;baseValue2" + ";$env:BASE_LIST"', activate)
+            self.assertIn('$env:BASE_LIST = "dummyValue1;dummyValue2;baseValue1;baseValue2;$env:BASE_LIST"', activate)
             self.assertIn('$env:BASE_VAR = "baseValue"', activate)
-            self.assertIn('$env:CPPFLAGS = "-flag1;-flag2;-baseFlag1;-baseFlag2" + ";$env:CPPFLAGS"', activate)
-            self.assertIn('$env:LD_LIBRARY_PATH = "dummydir\\lib;basedir\\lib" + ";$env:LD_LIBRARY_PATH"', activate)
-            self.assertIn('$env:PATH = "dummydir\\bin;basedir\\bin;samebin" + ";$env:PATH"', activate)
+            self.assertIn('$env:CPPFLAGS = "-flag1;-flag2;-baseFlag1;-baseFlag2;$env:CPPFLAGS"', activate)
+            self.assertIn('$env:LD_LIBRARY_PATH = "dummydir\\lib;basedir\\lib;$env:LD_LIBRARY_PATH"', activate)
+            self.assertIn('$env:PATH = "dummydir\\bin;basedir\\bin;samebin;$env:PATH"', activate)
             self.assertIn('$env:SPECIAL_VAR = "dummyValue"', activate)
 
             deactivate = load(os.path.join(client.current_folder, "deactivate.bat"))
-            self.assertIn('SET PROMPT=%s' % env.setdefault('PROMPT',''), deactivate)
-            self.assertIn('SET BASE_LIST=%s' % env.setdefault('BASE_LIST',''), deactivate)
-            self.assertIn('SET BASE_VAR=\r\n', deactivate)
-            self.assertIn('SET CPPFLAGS=%s' % env.setdefault('CPPFLAGS',''), deactivate)
-            self.assertIn('SET LD_LIBRARY_PATH=%s' % env.setdefault('LD_LIBRARY_PATH',''), deactivate)
-            self.assertIn('SET PATH=%s' % env.setdefault('PATH',''), deactivate)
-            self.assertIn('SET SPECIAL_VAR=\r\n', deactivate)
+            self.assertIn('SET PROMPT=%s' % env.get('PROMPT',''), deactivate)
+            self.assertIn('SET BASE_LIST=%s' % env.get('BASE_LIST',''), deactivate)
+            self.assertIn('SET BASE_VAR=%s' % env.get('BASE_VAR',''), deactivate)
+            self.assertIn('SET CPPFLAGS=%s' % env.get('CPPFLAGS',''), deactivate)
+            self.assertIn('SET LD_LIBRARY_PATH=%s' % env.get('LD_LIBRARY_PATH',''), deactivate)
+            self.assertIn('SET PATH=%s' % env.get('PATH',''), deactivate)
+            self.assertIn('SET SPECIAL_VAR=%s' % env.get('SPECIAL_VAR',''), deactivate)
 
             deactivate = load(os.path.join(client.current_folder, "deactivate.ps1"))
-            self.assertIn('$env:BASE_LIST = "%s"' % env.setdefault('BASE_LIST',''), deactivate)
-            self.assertIn('$env:BASE_VAR = ""', deactivate)
-            self.assertIn('$env:CPPFLAGS = "%s"' % env.setdefault('CPPFLAGS',''), deactivate)
-            self.assertIn('$env:LD_LIBRARY_PATH = "%s"' % env.setdefault('LD_LIBRARY_PATH',''), deactivate)
-            self.assertIn('$env:PATH = "%s"' % env.setdefault('PATH',''), deactivate)
-            self.assertIn('$env:SPECIAL_VAR = ""', deactivate)
-
+            self.assertIn('$env:BASE_LIST = "%s"' % env.get('BASE_LIST',''), deactivate)
+            self.assertIn('$env:BASE_VAR = "%s"' % env.get('BASE_VAR',''), deactivate)
+            self.assertIn('$env:CPPFLAGS = "%s"' % env.get('CPPFLAGS',''), deactivate)
+            self.assertIn('$env:LD_LIBRARY_PATH = "%s"' % env.get('LD_LIBRARY_PATH',''), deactivate)
+            self.assertIn('$env:PATH = "%s"' % env.get('PATH',''), deactivate)
+            self.assertIn('$env:SPECIAL_VAR = "%s"' % env.get('SPECIAL_VAR',''), deactivate)
         else:
+            linesep = '\n'
             activate = load(os.path.join(client.current_folder, "activate.sh"))
-            self.assertIn('OLD_PS1="$PS1"\nexport OLD_PS1', activate)
-            self.assertIn('PS1="(conanenv) $PS1"\nexport PS1', activate)
-            self.assertIn('BASE_LIST="dummyValue1":"dummyValue2":"baseValue1":"baseValue2":$BASE_LIST\nexport BASE_LIST', activate)
-            self.assertIn('BASE_VAR="baseValue"\nexport BASE_VAR', activate)
-            self.assertIn('CPPFLAGS="-flag1 -flag2 -baseFlag1 -baseFlag2 $CPPFLAGS"\nexport CPPFLAGS', activate)
-            self.assertIn('LD_LIBRARY_PATH="dummydir/lib":"basedir/lib":$LD_LIBRARY_PATH\nexport LD_LIBRARY_PATH', activate)
-            self.assertIn('PATH="dummydir/bin":"basedir/bin":"samebin":$PATH\nexport PATH', activate)
-            self.assertIn('SPECIAL_VAR="dummyValue"\nexport SPECIAL_VAR', activate)
+            self.assertIn('OLD_PS1="$PS1"%sexport OLD_PS1' % linesep, activate)
+            self.assertIn('PS1="(conanenv) $PS1"%sexport PS1' % linesep, activate)
+            self.assertIn('BASE_LIST="dummyValue1":"dummyValue2":"baseValue1":"baseValue2":$BASE_LIST%sexport BASE_LIST' % linesep, activate)
+            self.assertIn('BASE_VAR="baseValue"%sexport BASE_VAR' % linesep, activate)
+            self.assertIn('CPPFLAGS="-flag1 -flag2 -baseFlag1 -baseFlag2 $CPPFLAGS"%sexport CPPFLAGS' % linesep, activate)
+            self.assertIn('LD_LIBRARY_PATH="dummydir/lib":"basedir/lib":$LD_LIBRARY_PATH%sexport LD_LIBRARY_PATH' % linesep, activate)
+            self.assertIn('PATH="dummydir/bin":"basedir/bin":"samebin":$PATH%sexport PATH' % linesep, activate)
+            self.assertIn('SPECIAL_VAR="dummyValue"%sexport SPECIAL_VAR' % linesep, activate)
 
             deactivate = load(os.path.join(client.current_folder, "deactivate.sh"))
-            self.assertIn('PS1="$OLD_PS1"\nexport PS1', deactivate)
-            self.assertIn('BASE_LIST=%s\nexport BASE_LIST' % env.setdefault('BASE_LIST',''), deactivate)
-            self.assertIn('BASE_VAR=\nexport BASE_VAR', deactivate)
-            self.assertIn('CPPFLAGS=%s\nexport CPPFLAGS' % env.setdefault('CPPFLAGS',''), deactivate)
-            self.assertIn('LD_LIBRARY_PATH=%s\nexport LD_LIBRARY_PATH' % env.setdefault('LD_LIBRARY_PATH',''), deactivate)
-            self.assertIn('PATH=%s\nexport PATH' % env.setdefault('PATH',''), deactivate)
-            self.assertIn('SPECIAL_VAR=\nexport SPECIAL_VAR', deactivate)
+            self.assertIn('OLD_PS1="%s"%sexport OLD_PS1' % (env.get('OLD_PS1',''),linesep), deactivate)
+            self.assertIn('PS1="%s"%sexport PS1' % (env.get('PS1',''),linesep), deactivate)
+            self.assertIn('BASE_LIST="%s"%sexport BASE_LIST' % (env.get('BASE_LIST',''),linesep), deactivate)
+            self.assertIn('BASE_VAR="%s"%sexport BASE_VAR' % (env.get('BASE_VAR',''),linesep), deactivate)
+            self.assertIn('CPPFLAGS="%s"%sexport CPPFLAGS' % (env.get('CPPFLAGS',''),linesep), deactivate)
+            self.assertIn('LD_LIBRARY_PATH="%s"%sexport LD_LIBRARY_PATH' % (env.get('LD_LIBRARY_PATH',''),linesep), deactivate)
+            self.assertIn('PATH="%s"%sexport PATH' % (env.get('PATH',''),linesep), deactivate)
+            self.assertIn('SPECIAL_VAR="%s"%sexport SPECIAL_VAR' % (env.get('SPECIAL_VAR',''),linesep), deactivate)
+
+    def environment_test(self):
+        os.environ["PROMPT"] = "old_PROMPT"
+        os.environ["OLD_PS1"] = "old_OLD_PS1"
+        os.environ["PS1"] = "old_PS1"
+        os.environ["BASE_LIST"] = "old_BASE_LIST"
+        os.environ["BASE_VAR"] = "old_BASE_VAR"
+        os.environ["CPPFLAGS"] = "old_CPPFLAGS"
+        os.environ["LD_LIBRARY_PATH"] = "old_LD_LIBRARY_PATH"
+        os.environ["PATH"] = "old_PATH"
+        os.environ["SPECIAL_VAR"] = "old_SPECIAL_VAR"
+        self.basic_test()
