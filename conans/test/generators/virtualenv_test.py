@@ -56,7 +56,7 @@ virtualenv
         client.save({"conanfile.txt": base}, clean_first=True)
         client.run("install . --build")
 
-        if os_info.is_windows:
+        if os_info.is_windows and not os_info.is_posix:
             activate = load(os.path.join(client.current_folder, "activate.bat"))
             self.assertIn('SET PROMPT=(conanenv) %PROMPT%', activate)
             self.assertIn('SET BASE_LIST=dummyValue1;dummyValue2;baseValue1;baseValue2;%BASE_LIST%', activate)
@@ -90,7 +90,8 @@ virtualenv
             self.assertIn('$env:LD_LIBRARY_PATH = "%s"' % env.setdefault('LD_LIBRARY_PATH',''), deactivate)
             self.assertIn('$env:PATH = "%s"' % env.setdefault('PATH',''), deactivate)
             self.assertIn('$env:SPECIAL_VAR = "%s"' % env.setdefault('SPECIAL_VAR',''), deactivate)
-        else:
+
+        if os_info.is_posix:
             activate = load(os.path.join(client.current_folder, "activate.sh"))
             self.assertIn('OLD_PS1="$PS1"\nexport OLD_PS1', activate)
             self.assertIn('PS1="(conanenv) $PS1"\nexport PS1', activate)

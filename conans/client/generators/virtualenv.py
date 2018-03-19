@@ -109,7 +109,7 @@ class VirtualEnvGenerator(Generator):
     @property
     def content(self):
         result = {}
-        if os_info.is_windows:
+        if os_info.is_windows and not os_info.is_posix:
             activate, deactivate = self._cmd_lines()
             result["activate.bat"] = os.linesep.join(activate)
             result["deactivate.bat"] = os.linesep.join(deactivate)
@@ -117,7 +117,8 @@ class VirtualEnvGenerator(Generator):
             activate, deactivate = self._ps1_lines()
             result["activate.ps1"] = os.linesep.join(activate)
             result["deactivate.ps1"] = os.linesep.join(deactivate)
-        else:
+
+        if os_info.is_posix:
             activate, deactivate = self._sh_lines()
             result["activate.sh"] = os.linesep.join(activate)
             result["deactivate.sh"] = os.linesep.join(deactivate)
