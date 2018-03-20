@@ -291,6 +291,16 @@ class MockedUserIO(UserIO):
         self.login_index.update([remote_name])
         return tmp
 
+def run_helper(command_line, user_io,
+                 base_folder, current_folder,
+                 servers, users, client_version,
+                 min_server_compatible_version,
+                 requester_class, runner):
+    tc = TestClient(base_folder, current_folder,
+                 servers, users, client_version,
+                 min_server_compatible_version,
+                 requester_class, runner)
+    sys.exit(tc.run(command_line, user_io, True, True))
 
 class TestClient(object):
 
@@ -382,7 +392,7 @@ class TestClient(object):
             # Make original_stdout_fd point to the same file as to_fd
             os.dup2(to_fd, original_stdout_fd)
             # Create a new sys.stdout that points to the redirected fd
-            sys.stdout = codecs.getreader("utf-8")(os.fdopen(original_stdout_fd, 'wb'))
+            sys.stdout = io.TextIOWrapper(os.fdopen(original_stdout_fd, 'wb'))
 
         # Save a copy of the original stdout fd in saved_stdout_fd
         saved_stdout_fd = os.dup(original_stdout_fd)
@@ -446,15 +456,16 @@ class TestClient(object):
         self._init_collaborators(user_io)
 
     def run_in_external_process(self, command_line, user_io=None, ignore_error=False):
-        def run_helper(tc, command_line, user_io,):
-            sys.exit(tc.run(command_line, user_io, True, True))
-
         output = io.BytesIO()
         with self.stdout_redirector(output):
-            p = Process(target=run_helper, args=(self, command_line, user_io))
+            p = Process(target=run_helper, args=(command_line, user_io,
+                                                self.base_folder, self.current_folder,
+                                                self.servers, self.users, self.client_version,
+                                                self.min_server_compatible_version,
+                                                self.requester_class, self.runner))
             p.start()
             p.join()
-        self.user_io.out = output.getvalue().decode("utf-8")
+        self.user_io.out = output.getvalue().decode("utf-8", errors='ignore')
         error = p.exitcode
 
         if not ignore_error and error:
