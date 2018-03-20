@@ -1,5 +1,4 @@
 import os
-import platform
 import sys
 import tempfile
 
@@ -34,7 +33,7 @@ from conans.util.log import configure_logger
 from conans.util.tracer import log_command, log_exception
 from conans.client.loader_parse import load_conanfile_class
 from conans.client import settings_preprocessor
-from conans.tools import set_global_instances
+from conans.tools import set_global_instances, os_info
 from conans.client.cmd.uploader import CmdUpload
 from conans.client.cmd.profile import cmd_profile_update, cmd_profile_get,\
     cmd_profile_delete_key, cmd_profile_create, cmd_profile_list
@@ -703,7 +702,7 @@ class ConanAPIV1(object):
         # setup proper defaults
         cwd = cwd if cwd is not None else os.getcwd()
         references = references if references is not None else []
-        initial_env = initial_env if initial_env is not None else os.environ
+        initial_env = initial_env if initial_env is not None else os.environ.copy()
 
         # Disable all output from Conan
         if quiet:
@@ -742,6 +741,11 @@ class ConanAPIV1(object):
                 temp.close()
             os.unlink(temp.name)
 
+        # Update the environment with the information from the
+        # virtual environment generator.
+        for key,value,_ in env_vars:
+            initial_env[key] = value
+
         # Change to the correct directory which might has been changed during
         # installation and launch the command in the new environment.
         os.chdir(cwd)
@@ -752,13 +756,13 @@ class ConanAPIV1(object):
         # (see https://bugs.python.org/issue19124).
         # Work around both problems by first updating the current environment
         # directly and by using system on Windows.
-        os.environ.clear()
-        for key,value,_ in env_vars:
-            os.environ[key] = value
-        if platform.system() == "Windows":
-            os.system(" ".join(command))
+        if os_info.is_windows and not os_info.is_posix:
+            os.environ.clear()
+            for key,value in initial_env.items():
+                os.environ[key] = value
+            exit(os.system(" ".join(command)))
         else:
-            os.execvp(command[0], command)
+            os.execvpe(command[0], command, initial_env)
 
 Conan = ConanAPIV1
 
