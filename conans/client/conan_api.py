@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -755,12 +756,12 @@ class ConanAPIV1(object):
         # Windows apparently does not yield the desired behavior anyway
         # (see https://bugs.python.org/issue19124).
         # Work around both problems by first updating the current environment
-        # directly and by using system on Windows.
+        # directly and by using a subprocess on Windows.
         if os_info.is_windows and not os_info.is_posix:
             os.environ.clear()
             for key,value in initial_env.items():
                 os.environ[key] = value
-            exit(os.system(" ".join(command)))
+            sys.exit(subprocess.call(command))
         else:
             os.execvpe(command[0], command, initial_env)
 

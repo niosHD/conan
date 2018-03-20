@@ -1,12 +1,12 @@
 import unittest
 import os
-import platform
 from conans.test.utils.tools import TestClient
+from conans.tools import os_info
 
 class ExecTest(unittest.TestCase):
 
     def _env_cmd(self):
-        if platform.system() == "Windows":
+        if os_info.is_windows and not os_info.is_posix:
             return "SET"
         return "env"
 
@@ -39,4 +39,4 @@ class ToolBConan(ConanFile):
 
     def no_ref_test(self):
         client = TestClient()
-        client.run("exec %s" % self._env_cmd(), use_forked_process=True)
+        client.run_in_external_process("exec %s" % self._env_cmd())

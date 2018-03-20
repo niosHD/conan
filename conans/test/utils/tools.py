@@ -1,11 +1,15 @@
+import codecs
+import io
 import os
 import shlex
 import shutil
 import sys
+import tempfile
 import uuid
 from collections import Counter
 from contextlib import contextmanager
 from io import StringIO
+from multiprocessing import Process
 
 import requests
 import six
@@ -365,6 +369,38 @@ class TestClient(object):
         finally:
             self.current_folder = old_dir
 
+    # from https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python
+    @contextmanager
+    def stdout_redirector(self, stream):
+        # The original fd stdout points to. Usually 1 on POSIX systems.
+        original_stdout_fd = sys.stdout.fileno()
+
+        def _redirect_stdout(to_fd):
+            """Redirect stdout to the given file descriptor."""
+            # Flush and close sys.stdout - also closes the file descriptor (fd)
+            sys.stdout.close()
+            # Make original_stdout_fd point to the same file as to_fd
+            os.dup2(to_fd, original_stdout_fd)
+            # Create a new sys.stdout that points to the redirected fd
+            sys.stdout = codecs.getreader("utf-8")(os.fdopen(original_stdout_fd, 'wb'))
+
+        # Save a copy of the original stdout fd in saved_stdout_fd
+        saved_stdout_fd = os.dup(original_stdout_fd)
+        try:
+            # Create a temporary file and redirect stdout to it
+            tfile = tempfile.TemporaryFile(mode='w+b')
+            _redirect_stdout(tfile.fileno())
+            # Yield to caller, then redirect stdout back to the saved fd
+            yield
+            _redirect_stdout(saved_stdout_fd)
+            # Copy contents of temporary file to the given stream
+            tfile.flush()
+            tfile.seek(0, io.SEEK_SET)
+            stream.write(tfile.read())
+        finally:
+            tfile.close()
+            os.close(saved_stdout_fd)
+
     def _init_collaborators(self, user_io=None):
 
         output = TestBufferConanOutput()
@@ -409,12 +445,34 @@ class TestClient(object):
         # Maybe something have changed with migrations
         self._init_collaborators(user_io)
 
-    def run(self, command_line, user_io=None, ignore_error=False, use_forked_process=False):
+    def run_in_external_process(self, command_line, user_io=None, ignore_error=False):
+        def run_helper(tc, command_line, user_io,):
+            sys.exit(tc.run(command_line, user_io, True, True))
+
+        output = io.BytesIO()
+        with self.stdout_redirector(output):
+            p = Process(target=run_helper, args=(self, command_line, user_io))
+            p.start()
+            p.join()
+        self.user_io.out = output.getvalue().decode("utf-8")
+        error = p.exitcode
+
+        if not ignore_error and error:
+            logger.error(self.user_io.out)
+            print(self.user_io.out)
+            raise Exception("Command failed:\n%s" % command_line)
+
+        self.all_output += str(self.user_io.out)
+        return error
+
+    def run(self, command_line, user_io=None, ignore_error=False, stdout_output=False):
         """ run a single command as in the command line.
             If user or password is filled, user_io will be mocked to return this
             tuple if required
         """
         self.init_dynamic_vars(user_io)
+        if stdout_output:
+            self.user_io.out = ConanOutput(sys.stdout)
         conan = Conan(self.client_cache, self.user_io, self.runner, self.remote_manager,
                       self.search_manager, settings_preprocessor)
         outputer = CommandOutputer(self.user_io, self.client_cache)
@@ -426,15 +484,7 @@ class TestClient(object):
         sys.path.append(os.path.join(self.client_cache.conan_folder, "python"))
         old_modules = list(sys.modules.keys())
         try:
-            if use_forked_process:
-                pid = os.fork()
-                if pid == 0:
-                    error = command.run(args)
-                    sys.exit(error)
-                (_, retcode) = os.waitpid(pid,0)
-                error = retcode != 0
-            else:
-                error = command.run(args)
+            error = command.run(args)
         finally:
             sys.path = old_path
             os.chdir(current_dir)
