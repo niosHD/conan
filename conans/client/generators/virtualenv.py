@@ -17,9 +17,9 @@ class VirtualEnvGenerator(Generator):
     def filename(self):
         return
 
-    def _variable_placeholder(self, name, flavor):
+    def _variable_placeholder(self, flavor, name):
         ''' Returns a placeholder for the variable name formatted for a certain
-        shell. (e.g., cmd, ps1, sh).
+        execution environment. (e.g., cmd, ps1, sh).
         '''
         if flavor == "cmd":
             return "%%%s%%" % name
@@ -28,9 +28,10 @@ class VirtualEnvGenerator(Generator):
         # flavor == sh
         return "$%s" % name
 
-    def _format_values(self, variables, flavor, env=None):
-        '''Formats the values for the different supported script language flavours.
+    def format_values(self, flavor, variables=None, env=None):
+        '''Formats the values for the different supported script language flavors.
         '''
+        variables = variables or self.env.items()
         env = env or os.environ
         pathsep,quoteElements,quoteFullValue,enableSpacePathsep = ":",True,False,True
         if flavor in ["cmd", "ps1"]:
@@ -42,7 +43,7 @@ class VirtualEnvGenerator(Generator):
         for name, value in variables:
             # activate values
             if isinstance(value, list):
-                placeholder = self._variable_placeholder(name, flavor)
+                placeholder = self._variable_placeholder(flavor, name)
                 if enableSpacePathsep and name in self.append_with_spaces:
                     # Variables joined with spaces look like: CPPFLAGS="one two three"
                     value = " ".join(value+[placeholder])
@@ -70,7 +71,7 @@ class VirtualEnvGenerator(Generator):
 
         activate_lines = []
         deactivate_lines = []
-        for name, activate, deactivate in self._format_values(variables, "sh"):
+        for name, activate, deactivate in self.format_values("sh", variables):
             activate_lines.append("%s=%s" % (name,activate))
             activate_lines.append("export %s" % name)
             deactivate_lines.append("%s=%s" % (name,deactivate))
@@ -85,7 +86,7 @@ class VirtualEnvGenerator(Generator):
 
         activate_lines = ["@echo off"]
         deactivate_lines = ["@echo off"]
-        for name, activate, deactivate in self._format_values(variables, "cmd"):
+        for name, activate, deactivate in self.format_values("cmd", variables):
             activate_lines.append("SET %s=%s" % (name,activate))
             deactivate_lines.append("SET %s=%s" % (name,deactivate))
         activate_lines.append('')
@@ -93,14 +94,12 @@ class VirtualEnvGenerator(Generator):
         return activate_lines, deactivate_lines
 
     def _ps1_lines(self):
-        variables = self.env.items()
-
         activate_lines = ['function global:_old_conan_prompt {""}']
         activate_lines.append('$function:_old_conan_prompt = $function:prompt')
         activate_lines.append('function global:prompt { write-host "(%s) " -nonewline; & $function:_old_conan_prompt }' % self.venv_name)
         deactivate_lines = ['$function:prompt = $function:_old_conan_prompt']
         deactivate_lines.append('remove-item function:_old_conan_prompt')
-        for name, activate, deactivate in self._format_values(variables, "ps1"):
+        for name, activate, deactivate in self.format_values("ps1"):
             activate_lines.append('$env:%s = %s' % (name,activate))
             deactivate_lines.append('$env:%s = %s' % (name,deactivate))
         activate_lines.append('')
